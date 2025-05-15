@@ -1,7 +1,5 @@
 # Create-Shopify-Loadsheet
 
-# Create Volusion Loadsheet
-
 This repository creates a GUI translating product information from e-commerce site Volusion. The resulting load sheet contains the following information:
 
 * **Part #**: taken from "Variant SKU" field
