@@ -16,7 +16,7 @@ For access to the completed exe file, visit the "Release" section.
 
 ## How To Create Executable File
 
-### Step 1: Download Product CSV File from Volusion and Python File From Repository (create_volusion_loadsheet.py)
+### Step 1: Download Product CSV File from Volusion and Python File From Repository (create_shopify_loadsheet.py)
 
 If using sample csv file, download "volusion_sample_data.csv"
 
