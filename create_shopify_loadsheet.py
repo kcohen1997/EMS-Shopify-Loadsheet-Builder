@@ -209,7 +209,7 @@ def save_file():
 root = tk.Tk()
 
 # GUI Basics
-root.title("Create Volusion Loadsheet")
+root.title("Create Shopify Loadsheet")
 root.geometry("700x600")
 
 # Add label for downloading product list from site
