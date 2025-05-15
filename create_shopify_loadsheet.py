@@ -57,7 +57,7 @@ def _process_file_worker(file_path):
         df['Title'] = df['Title'].fillna('').astype(str).str.strip()
 
         df['Title'] = df['Title'] 
-      # Ensure options are strings, replacing NaN with empty strings
+        # Ensure options are strings, replacing NaN with empty strings
         df['Option1 Value'] = df['Option1 Value'].fillna('').astype(str).str.strip()
         df['Option2 Value'] = df['Option2 Value'].fillna('').astype(str).str.strip()
         df['Option3 Value'] = df['Option3 Value'].fillna('').astype(str).str.strip()
@@ -73,13 +73,15 @@ def _process_file_worker(file_path):
             lambda row: f"{row['Title']} - {row['Option Suffix']}" if row['Option Suffix'] else row['Title'],
             axis=1
         )
+
+        df['Variant Weight (lbs)'] = round(df['Variant Grams'] * 0.00220462, 2)
   
         # Convert Variant Price to numeric
         df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
 
         df['Variant SKU'] = df['Variant SKU'].astype(str).str.strip()
-        df = df[df['Variant Price']>0 & (df['Published'].astype(str).str.lower() == 'true') & (df['Status'].astype(str).str.lower() == 'active')]
-        
+        df = df[ (df['Variant Price'] > 0) & (df['Published'].astype(str).str.lower() == 'true') & (df['Status'].astype(str).str.lower() == 'active')]
+
         invalid_prices = df['Variant Price'].isna().sum()
         if invalid_prices > 0:
             raise ValueError(f"{invalid_prices} row(s) have invalid or missing 'Variant Price' values.")
