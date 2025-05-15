@@ -1,6 +1,6 @@
 # Create-Shopify-Loadsheet
 
-This repository creates a GUI translating product information from e-commerce site Volusion. The resulting load sheet contains the following information:
+This repository creates a GUI translating product information from e-commerce site Shopify. The resulting load sheet contains the following information:
 
 * **Part #**: taken from "Variant SKU" field
 * **Title**: taken from "Title" field
@@ -16,9 +16,9 @@ For access to the completed exe file, visit the "Release" section.
 
 ## How To Create Executable File
 
-### Step 1: Download Product CSV File from Volusion and Python File From Repository (create_shopify_loadsheet.py)
+### Step 1: Download Product CSV File from Shopify and Python File From Repository (create_shopify_loadsheet.py)
 
-If using sample csv file, download "volusion_sample_data.csv"
+If using sample csv file, download "shopify_sample_data.csv"
 
 ### Step 2: Download the following onto your computer:
 
@@ -34,7 +34,7 @@ Run this command in terminal to see if downloaded properly:
 python --version
 ```
 
-pyinstaller --onefile --noconsole create_volusion_loadsheet.py
+pyinstaller --onefile --noconsole create_shopify_loadsheet.py
 
 #### Pip (Python Package Manager):
 
@@ -62,5 +62,5 @@ pyinstaller --version
 ### Step 3:  In terminal, go to the same folder/directory as the Python file and enter the following command:
 
 ```bash
-pyinstaller --onefile --noconsole create_volusion_loadsheet.py
+pyinstaller --onefile --noconsole create_shopify_loadsheet.py
 ```
