@@ -213,7 +213,7 @@ root.title("Create Shopify Loadsheet")
 root.geometry("700x600")
 
 # Add label for downloading product list from site
-label = tk.Label(root, text="Step 1: Download product list from Volusion if you haven't already (must be in CSV format)", font=("Helvetica", 10, "bold"))
+label = tk.Label(root, text="Step 1: Download product list from Shopify if you haven't already (must be in CSV format)", font=("Helvetica", 10, "bold"))
 label.pack(pady=10)
 
 # Add label for apply multipliers (optional)
