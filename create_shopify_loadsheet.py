@@ -40,6 +40,7 @@ def _process_file_worker(file_path):
             result = chardet.detect(raw_data)
             encoding = result['encoding']
 
+        # Step 1: Read csv file. Confirm if required columns are in the file.
         df = pd.read_csv(file_path, encoding=encoding)
 
         required_columns = [
@@ -50,18 +51,24 @@ def _process_file_worker(file_path):
         if missing_columns:
             raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
         
+        # Step 2: Convert and forward fill necessary fields
         pd.set_option('future.no_silent_downcasting', True)
+
+        # Forward fill
         df['Title'] = df['Title'].ffill()
         df['Published'] = df['Published'].infer_objects().ffill()
         df['Status'] = df['Status'].ffill()
         df['Title'] = df['Title'].fillna('').astype(str).str.strip()
 
-        df['Title'] = df['Title'] 
+        # Convert Variant Price to numeric
+        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
+
         # Ensure options are strings, replacing NaN with empty strings
         df['Option1 Value'] = df['Option1 Value'].fillna('').astype(str).str.strip()
         df['Option2 Value'] = df['Option2 Value'].fillna('').astype(str).str.strip()
         df['Option3 Value'] = df['Option3 Value'].fillna('').astype(str).str.strip()
 
+        # Step 3: Calculate price multipliers
         # Combine non-empty options into a suffix
         df['Option Suffix'] = df[['Option1 Value', 'Option2 Value', 'Option3 Value']].apply(
             lambda row: ' - '.join([val for val in row if val]),
@@ -74,19 +81,18 @@ def _process_file_worker(file_path):
             axis=1
         )
 
-        df['Variant Weight (lbs)'] = round(df['Variant Grams'] * 0.00220462, 2)
-  
-        # Convert Variant Price to numeric
-        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
-
+        # Step 4: Convert grams to pounds
+        df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
         df['Variant SKU'] = df['Variant SKU'].astype(str).str.strip()
+
+        # Step 5: Only include active products where the variant price is valid (greater than zero)
         df = df[ (df['Variant Price'] > 0) & (df['Published'].astype(str).str.lower() == 'true') & (df['Status'].astype(str).str.lower() == 'active')]
 
         invalid_prices = df['Variant Price'].isna().sum()
         if invalid_prices > 0:
             raise ValueError(f"{invalid_prices} row(s) have invalid or missing 'Variant Price' values.")
 
-        # Apply multipliers
+        # Step 6: Calculate price multipliers
         try:
             jobber_multiplier = float(jobber_price_entry.get()) if jobber_price_entry.get() else 0.85
             dealer_multiplier = float(dealer_price_entry.get()) if dealer_price_entry.get() else 0.75
@@ -106,8 +112,7 @@ def _process_file_worker(file_path):
         if oemwd_price_var.get():
             df['OEM/WD Price'] = round(df['Variant Price'] * oemwd_multiplier, 2)
 
-        # Convert grams to pounds
-        df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
+        # Step 7: Rename and reorder columns
 
         # Build final column list
         price_cols = []
@@ -123,8 +128,7 @@ def _process_file_worker(file_path):
             price_cols +
             ['Body (HTML)', 'Weight (lb)', 'Image Src']
         )
-
-        # Select and rename final DataFrame
+        
         variant_list = df[final_columns].copy()
         variant_list.rename(columns={
             'Variant SKU': 'Part #',
@@ -136,6 +140,7 @@ def _process_file_worker(file_path):
         global processed_data
         processed_data = variant_list
 
+        # Step 8: Process data successful message
         root.after(0, lambda: [
             save_button.config(state=tk.NORMAL),
             process_button.config(state=tk.NORMAL),
@@ -207,11 +212,11 @@ root = tk.Tk()
 root.title("Create Volusion Loadsheet")
 root.geometry("700x600")
 
-# Add label for Step 1
+# Add label for downloading product list from site
 label = tk.Label(root, text="Step 1: Download product list from Volusion if you haven't already (must be in CSV format)", font=("Helvetica", 10, "bold"))
 label.pack(pady=10)
 
-# Add label for Step 2
+# Add label for apply multipliers (optional)
 label = tk.Label(root, text="Step 2: Apply multipliers for additional pricing metrics (optional)", font=("Helvetica", 10, "bold"))
 label.pack(pady=10)
 
@@ -249,7 +254,7 @@ oemwd_price_var = tk.BooleanVar(value=True)
 oemwd_check = tk.Checkbutton(root, text="Include OEM/WD Price", variable=oemwd_price_var)
 oemwd_check.pack(pady=5)
 
-# Add label for Step 3
+# Add label for processing CSV file
 label = tk.Label(root, text="Step 3: Click button below to select and process your CSV file", font=("Helvetica", 10, "bold"))
 label.pack(pady=10)
 
@@ -261,7 +266,7 @@ process_button.pack(pady=10)
 status_label = tk.Label(root, text="", fg="blue")
 status_label.pack(pady=10)
 
-# Add label for Step 4
+# Add label for saving processed file
 label = tk.Label(root, text="Step 4: Click button below to save your newly processed file", font=("Helvetica", 10, "bold"))
 label.pack(pady=10)
 
