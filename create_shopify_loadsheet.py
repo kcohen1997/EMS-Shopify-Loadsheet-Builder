@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import chardet
 import threading
+import re
 
 # --- Float Validation ---
 def validate_float_input(new_value):
@@ -114,7 +115,7 @@ def _process_file_worker(file_path):
 
         # Step 7: Rename and reorder columns
 
-        # Build final column list
+        # Build Price column list
         price_cols = []
         if jobber_price_var.get():
             price_cols.append('Jobber Price')
@@ -123,13 +124,27 @@ def _process_file_worker(file_path):
         if oemwd_price_var.get():
             price_cols.append('OEM/WD Price')
 
+        # Build Product column list
+        product_metafield_columns = []
+        if include_product_metafields_var.get():
+            # get all product metafield columns that are not empty
+            product_metafield_columns = [col for col in df.columns if "metafields" in col and not df[col].isna().all()]
+            # forward fill
+            df[product_metafield_columns] = df[product_metafield_columns].ffill()
+    
         final_columns = (
             ['Variant SKU', 'Title', 'Variant Price'] +
             price_cols +
-            ['Body (HTML)', 'Weight (lb)', 'Image Src']
+            ['Body (HTML)', 'Weight (lb)', 'Image Src'] + product_metafield_columns 
         )
         
+        # Rename Column Names
         variant_list = df[final_columns].copy()
+        cleaned_column_names = {
+            col: re.sub(r"\s*\(product\.metafields.*?\)", "", col).strip()
+            for col in product_metafield_columns
+        }
+        variant_list.rename(columns=cleaned_column_names, inplace=True)
         variant_list.rename(columns={
             'Variant SKU': 'Part #',
             'Variant Price': 'Retail Price',
@@ -210,7 +225,7 @@ root = tk.Tk()
 
 # GUI Basics
 root.title("Create Shopify Loadsheet")
-root.geometry("700x600")
+root.geometry("700x700")
 
 # Add label for downloading product list from site
 label = tk.Label(root, text="Step 1: Download product list from Shopify if you haven't already (must be in CSV format)", font=("Helvetica", 10, "bold"))
@@ -261,6 +276,11 @@ label.pack(pady=10)
 # Select CSV input download
 process_button = tk.Button(root, text="Select CSV and Process", command=process_file)
 process_button.pack(pady=10)
+
+# Include metafields checkbox
+include_product_metafields_var = tk.BooleanVar(value=True)
+include_product_metafields_check = tk.Checkbutton(root, text="Include Product Metafields", variable=include_product_metafields_var)
+include_product_metafields_check.pack(pady=5)
 
 # Status label
 status_label = tk.Label(root, text="", fg="blue")
