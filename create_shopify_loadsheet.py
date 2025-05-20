@@ -43,7 +43,6 @@ def _process_file_worker(file_path):
 
         # Step 1: Read csv file. Confirm if required columns are in the file.
         df = pd.read_csv(file_path, encoding=encoding)
-
         required_columns = [
             'Variant SKU', 'Title', 'Variant Price', 'Body (HTML)', 'Option1 Value',
             'Option2 Value', 'Option3 Value', 'Published', 'Status', 'Variant Grams', 'Image Src'
@@ -52,48 +51,35 @@ def _process_file_worker(file_path):
         if missing_columns:
             raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
         
-        # Step 2: Convert and forward fill necessary fields
+        # Step 2: Use forward fill technique for necessary product fields
         pd.set_option('future.no_silent_downcasting', True)
-
-        # Forward fill
         df['Title'] = df['Title'].ffill()
         df['Published'] = df['Published'].infer_objects().ffill()
         df['Status'] = df['Status'].ffill()
         df['Title'] = df['Title'].fillna('').astype(str).str.strip()
 
-        # Convert Variant Price to numeric
-        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
-
-        # Ensure options are strings, replacing NaN with empty strings
-        df['Option1 Value'] = df['Option1 Value'].fillna('').astype(str).str.strip()
+        # Step 3: Convert necessary fields
+        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce') # Convert Variant Price to numeric
+        df['Option1 Value'] = df['Option1 Value'].fillna('').astype(str).str.strip() # Ensure options are strings, replacing NaN with empty strings
         df['Option2 Value'] = df['Option2 Value'].fillna('').astype(str).str.strip()
         df['Option3 Value'] = df['Option3 Value'].fillna('').astype(str).str.strip()
 
-        # Step 3: Calculate price multipliers
-        # Combine non-empty options into a suffix
-        df['Option Suffix'] = df[['Option1 Value', 'Option2 Value', 'Option3 Value']].apply(
-            lambda row: ' - '.join([val for val in row if val]),
-            axis=1
-        )   
-
-        # Append to Title only if there are non-empty options
-        df['Title'] = df.apply(
-            lambda row: f"{row['Title']} - {row['Option Suffix']}" if row['Option Suffix'] else row['Title'],
-            axis=1
-        )
-
-        # Step 4: Convert grams to pounds
-        df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
-        df['Variant SKU'] = df['Variant SKU'].astype(str).str.strip()
-
-        # Step 5: Only include active products where the variant price is valid (greater than zero)
+        # Step 4: Only include active products where the variant price is valid (greater than zero)
         df = df[ (df['Variant Price'] > 0) & (df['Published'].astype(str).str.lower() == 'true') & (df['Status'].astype(str).str.lower() == 'active')]
-
         invalid_prices = df['Variant Price'].isna().sum()
         if invalid_prices > 0:
             raise ValueError(f"{invalid_prices} row(s) have invalid or missing 'Variant Price' values.")
 
-        # Step 6: Calculate price multipliers
+        # Step 5: Create Full Title using Options 1-3
+        df['Option Suffix'] = df[['Option1 Value', 'Option2 Value', 'Option3 Value']].apply(lambda row: ' - '.join([val for val in row if val]), axis=1)   
+        df['Title'] = df.apply(lambda row: f"{row['Title']} - {row['Option Suffix']}" if row['Option Suffix'] else row['Title'], axis=1)
+        if 'Title' in df.columns:   
+            df['Title'] = df['Title'].astype(str).str.replace('- Default Title', '', regex=False) # Replace '- Default Title' with ''
+
+        # Step 6: Convert grams to pounds
+        df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
+
+        # Step 7: Calculate price multipliers
         try:
             jobber_multiplier = float(jobber_price_entry.get()) if jobber_price_entry.get() else 0.85
             dealer_multiplier = float(dealer_price_entry.get()) if dealer_price_entry.get() else 0.75
@@ -105,7 +91,6 @@ def _process_file_worker(file_path):
                 process_button.config(state=tk.NORMAL)
             ])
             return
-
         if jobber_price_var.get():
             df['Jobber Price'] = round(df['Variant Price'] * jobber_multiplier, 2)
         if dealer_price_var.get():
@@ -113,10 +98,14 @@ def _process_file_worker(file_path):
         if oemwd_price_var.get():
             df['OEM/WD Price'] = round(df['Variant Price'] * oemwd_multiplier, 2)
 
-        # Step 7: Rename and reorder columns
+        # Step 8: Rename Product metafield column
+        product_metafield_columns = []   # Build Product column list
+        if include_product_metafields_var.get():    
+            product_metafield_columns = [col for col in df.columns if "metafields" in col and not df[col].isna().all()]    # get all product metafield columns that are not empty
+            df[product_metafield_columns] = df[product_metafield_columns].ffill()  # forward fill
 
-        # Build Price column list
-        price_cols = []
+        # Step 9: Add New Optional Price Columns (Jobber, Dealer, OEM/WD Price)
+        price_cols = []  # Build Price column list
         if jobber_price_var.get():
             price_cols.append('Jobber Price')
         if dealer_price_var.get():
@@ -124,38 +113,19 @@ def _process_file_worker(file_path):
         if oemwd_price_var.get():
             price_cols.append('OEM/WD Price')
 
-        # Build Product column list
-        product_metafield_columns = []
-        if include_product_metafields_var.get():
-            # get all product metafield columns that are not empty
-            product_metafield_columns = [col for col in df.columns if "metafields" in col and not df[col].isna().all()]
-            # forward fill
-            df[product_metafield_columns] = df[product_metafield_columns].ffill()
-    
-        final_columns = (
-            ['Variant SKU', 'Title', 'Variant Price'] +
-            price_cols +
-            ['Body (HTML)', 'Weight (lb)', 'Image Src'] + product_metafield_columns 
-        )
-        
-        # Rename Column Names
-        variant_list = df[final_columns].copy()
-        cleaned_column_names = {
-            col: re.sub(r"\s*\(product\.metafields.*?\)", "", col).strip()
-            for col in product_metafield_columns
-        }
-        variant_list.rename(columns=cleaned_column_names, inplace=True)
-        variant_list.rename(columns={
-            'Variant SKU': 'Part #',
-            'Variant Price': 'Retail Price',
-            'Body (HTML)': 'Description',
-            'Image Src': 'Image'
-        }, inplace=True)
+        # Step 10: Create Final Column List
+        final_columns = (['Variant SKU', 'Title', 'Variant Price'] + price_cols + ['Body (HTML)', 'Weight (lb)', 'Image Src'] + product_metafield_columns)
+        final_variant_list = df[final_columns].copy()
+        cleaned_column_names = {col: re.sub(r"\s*\(product\.metafields.*?\)", "", col).strip() for col in product_metafield_columns } # Rename metafield column names
+        final_variant_list.rename(columns=cleaned_column_names, inplace=True)
+        final_variant_list.rename(columns={'Variant SKU': 'Part #', 'Variant Price': 'Retail Price', 'Body (HTML)': 'Description','Image Src': 'Image'}, inplace=True)
+
+        # Optional Step (Eddie Motorsports Only): Replace '|' with space in Fitment column if it exists
+        if 'Fitment' in final_variant_list.columns:
+            final_variant_list['Fitment'] = (final_variant_list['Fitment'].astype(str).str.replace('|', ' ', regex=False).str.replace('\n', ', ', regex=False))
 
         global processed_data
-        processed_data = variant_list
-
-        # Step 8: Process data successful message
+        processed_data = final_variant_list
         root.after(0, lambda: [
             save_button.config(state=tk.NORMAL),
             process_button.config(state=tk.NORMAL),
