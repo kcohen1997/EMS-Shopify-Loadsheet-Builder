@@ -68,6 +68,8 @@ def _process_file_worker(file_path):
         if 'Fitment (product.metafields.convermax.fitment)' in df.columns and 'Handle' in df.columns: # Forward-fill Fitment based on handle
             df['Handle'] = df['Handle']
             df['Fitment (product.metafields.convermax.fitment)'] = df.groupby('Handle')['Fitment (product.metafields.convermax.fitment)'].ffill().infer_objects(copy=False)
+        if 'Type' in df.columns and 'Handle' in df.columns:
+            df['Type'] = ( df.groupby('Handle')['Type'].ffill().infer_objects(copy=False))
 
         # Step 3: Only include Published and Active Products
         df = df[
@@ -111,11 +113,11 @@ def _process_file_worker(file_path):
                 .str.replace('|', ' ', regex=False)
                 .str.replace('\n', ', ', regex=False)
             )
-
+    
         # Step 8: Create final list of columns
         final_variant_list = df.copy()
         final_column_list = [
-            'Variant SKU', 'Full Title', 'Title', 'Variant Price', 'Jobber Price',
+            'Variant SKU', 'Full Title', 'Title', 'Type', 'Variant Price', 'Jobber Price',
             'Dealer Price', 'OEM/WD Price', 'Length (in)', 'Width (in)', 'Height (in)',
             'Weight (lb)', 'Fitment (product.metafields.convermax.fitment)',
             'Body (HTML)', 'Variant Image', 'Image 2', 'Image 3'
@@ -126,6 +128,7 @@ def _process_file_worker(file_path):
         final_variant_list = final_variant_list[final_column_list] # only include columns from column list
         final_variant_list.rename(columns={ # rename specific columns 
             'Variant SKU': 'Part #',
+            'Type': 'Category',
             'Variant Price': 'Retail Price',
             'Fitment (product.metafields.convermax.fitment)': 'Fitment',
             'Body (HTML)': 'Description',
