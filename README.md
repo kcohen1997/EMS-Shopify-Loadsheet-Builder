@@ -70,3 +70,4 @@ pyinstaller --version
 ```bash
 pyinstaller --onefile --noconsole create_shopify_loadsheet.py
 ```
+The resulting file will be located in the newly created "dist" folder
