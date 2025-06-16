@@ -1,4 +1,4 @@
-# Create-Shopify-Loadsheet
+# Eddie Motorsports Shopify Product Loadshet
 
 This repository creates a GUI cleaning up Eddie Motorsports product information from the e-commerce site Shopify. The resulting Loadsheet contains the following information:
 
