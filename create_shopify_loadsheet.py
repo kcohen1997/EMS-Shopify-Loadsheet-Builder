@@ -70,6 +70,12 @@ def _process_file_worker(file_path):
             df['Fitment (product.metafields.convermax.fitment)'] = df.groupby('Handle')['Fitment (product.metafields.convermax.fitment)'].ffill().infer_objects(copy=False)
         if 'Type' in df.columns and 'Handle' in df.columns:
             df['Type'] = ( df.groupby('Handle')['Type'].ffill().infer_objects(copy=False))
+        if 'Length (product.metafields.custom.length)' in df.columns and 'Handle' in df.columns:
+            df['Length (product.metafields.custom.length)'] = ( df.groupby('Handle')['Length (product.metafields.custom.length)'].ffill().infer_objects(copy=False))
+        if 'Width (product.metafields.custom.width)' in df.columns and 'Handle' in df.columns:
+            df['Width (product.metafields.custom.width)'] = ( df.groupby('Handle')['Width (product.metafields.custom.width)'].ffill().infer_objects(copy=False))
+        if 'Height (product.metafields.custom.height)' in df.columns and 'Handle' in df.columns:
+            df['Height (product.metafields.custom.height)'] = ( df.groupby('Handle')['Height (product.metafields.custom.height)'].ffill().infer_objects(copy=False))
 
         # Step 3: Only include Published and Active Products
         df = df[
@@ -101,7 +107,7 @@ def _process_file_worker(file_path):
                 df[col] = pd.to_numeric(df[col], errors='coerce') \
                     .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
-        # Step 6: Convert grams to weight
+        # Step 6: Convert variant grams to weight
         df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
 
         # Step 7: Clean 'Fitment' column by replacing '|' with space and newlines with comma + space
@@ -113,16 +119,21 @@ def _process_file_worker(file_path):
                 .str.replace('|', ' ', regex=False)
                 .str.replace('\n', ', ', regex=False)
             )
+
+        # Step 8: Clean 'Length', 'Width', and 'Height' columns by removing the ' character
+        for dim_col in ['Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)']:
+            if dim_col in df.columns:
+                df[dim_col] = df[dim_col].fillna('#N/A').astype(str).str.replace("'", '', regex=False)
     
-        # Step 8: Create final list of columns
+        # Step 9: Create final column list
         final_variant_list = df.copy()
         final_column_list = [
-            'Variant SKU', 'Full Title', 'Title', 'Type', 'Variant Price', 'Jobber Price',
-            'Dealer Price', 'OEM/WD Price', 'Length (in)', 'Width (in)', 'Height (in)',
+            'Handle', 'Title', 'Variant SKU', 'Full Title', 'Type', 'Variant Price', 'Jobber Price',
+            'Dealer Price', 'OEM/WD Price', 'Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)',
             'Weight (lb)', 'Fitment (product.metafields.convermax.fitment)',
             'Body (HTML)', 'Variant Image', 'Image 2', 'Image 3'
         ]
-        for col in final_column_list: # if column is not on csv file, fill in with '#N/A'
+        for col in final_column_list: # if column is not on csv file, fill in with '#N/A' so the column will at least exist
             if col not in final_variant_list.columns:
                 final_variant_list[col] = '#N/A'
         final_variant_list = final_variant_list[final_column_list] # only include columns from column list
@@ -130,15 +141,18 @@ def _process_file_worker(file_path):
             'Variant SKU': 'Part #',
             'Type': 'Category',
             'Variant Price': 'Retail Price',
+            'Length (product.metafields.custom.length)': 'Length (in)',
+            'Width (product.metafields.custom.width)': 'Width (in)', 
+            'Height (product.metafields.custom.height)': 'Height (in)',
             'Fitment (product.metafields.convermax.fitment)': 'Fitment',
             'Body (HTML)': 'Description',
             'Variant Image': 'Image 1',
         }, inplace=True)
 
-        # Step 9: Fill all empty fields with '#N/A'
+        # Step 10: Fill any empty fields with '#N/A'
         final_variant_list.fillna("#N/A", inplace=True)
 
-        # Step 10: Save the final processed CSV
+        # Step 11: Save the final processed CSV
         output_file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if output_file_path:
             final_variant_list.to_csv(output_file_path, index=False)
