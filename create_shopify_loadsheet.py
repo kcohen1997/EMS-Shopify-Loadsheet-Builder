@@ -124,14 +124,34 @@ def _process_file_worker(file_path):
         for dim_col in ['Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)']:
             if dim_col in df.columns:
                 df[dim_col] = df[dim_col].fillna('#N/A').astype(str).str.replace("'", '', regex=False)
+
+        # Step 9: Add product link based on handle
+        df['Product Link'] = 'https://eddiemotorsports.com/products/' + df['Handle'].astype(str)
+        
+        # Step 10: Extract Image 2 and Image 3 based on Handle + Variant SKU + Image Position
+        if {'Handle', 'Variant SKU', 'Image Position', 'Image Src'}.issubset(df.columns):
+            df['Image Position'] = pd.to_numeric(df['Image Position'], errors='coerce')
     
-        # Step 9: Create final column list
+        image_df = df[['Handle', 'Variant SKU', 'Image Position', 'Image Src']].dropna(subset=['Image Src'])    # Filter and sort image entries
+        image_df = image_df.sort_values(['Handle', 'Variant SKU', 'Image Position'])
+        image_groups = image_df.groupby(['Handle', 'Variant SKU'])['Image Src'].apply(list).to_dict() # Group by both Handle and Variant SKU
+  
+        df['Image 2'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 1), axis=1)   # Map Image 2 and 3 using (Handle, Variant SKU)
+        df['Image 3'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 2), axis=1)
+
+        df['Product Link'] = df['Handle'].astype(str).apply(lambda h: f'=HYPERLINK("https://eddiemotorsports.com/products/{h}")')
+        df.rename(columns={ 'Variant Image': 'Image 1'}, inplace=True) # rename variant image to image 1
+        df['Image 1'] = df['Image 1'].fillna('#N/A').astype(str).apply(lambda h: f'=HYPERLINK("{h}")' if h != '#N/A' else '#N/A')
+        df['Image 2'] = df['Image 2'].fillna('#N/A').astype(str).apply(lambda h: f'=HYPERLINK("{h}")' if h != '#N/A' else '#N/A')
+        df['Image 3'] = df['Image 3'].fillna('#N/A').astype(str).apply(lambda h: f'=HYPERLINK("{h}")' if h != '#N/A' else '#N/A')
+
+        # Step 11: Create final column list
         final_variant_list = df.copy()
         final_column_list = [
             'Handle', 'Title', 'Variant SKU', 'Full Title', 'Type', 'Variant Price', 'Jobber Price',
             'Dealer Price', 'OEM/WD Price', 'Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)',
             'Weight (lb)', 'Fitment (product.metafields.convermax.fitment)',
-            'Body (HTML)', 'Variant Image', 'Image 2', 'Image 3'
+            'Body (HTML)', 'Image 1', 'Image 2', 'Image 3', 'Product Link'
         ]
         for col in final_column_list: # if column is not on csv file, fill in with '#N/A' so the column will at least exist
             if col not in final_variant_list.columns:
@@ -149,10 +169,10 @@ def _process_file_worker(file_path):
             'Variant Image': 'Image 1',
         }, inplace=True)
 
-        # Step 10: Fill any empty fields with '#N/A'
+        # Step 12: Fill any empty fields with '#N/A'
         final_variant_list.fillna("#N/A", inplace=True)
 
-        # Step 11: Save the final processed CSV
+        # Step 13: Save the final processed CSV
         output_file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if output_file_path:
             final_variant_list.to_csv(output_file_path, index=False)
@@ -171,6 +191,11 @@ def _process_file_worker(file_path):
             messagebox.showerror("Error", f"An error occurred:\n{e}"),
         ])
 
+def hyperlink_image(url):
+    if url and url != '#N/A':
+        return f'=HYPERLINK("{url}", "{url}")'
+    return '#N/A'
+
 def process_file(file_path):
     status_label.config(text="Processing...")
     threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
@@ -180,6 +205,12 @@ def select_file():
     if file_path:
         process_file(file_path)
 
+def get_image(images, idx): # Helper to extract image by index safely
+    try:
+        return images[idx]
+    except (IndexError, TypeError):
+        return '#N/A'
+            
 # --- GUI setup ---
 root = tk.Tk()
 root.title("Shopify CSV Processor (EMS)")
