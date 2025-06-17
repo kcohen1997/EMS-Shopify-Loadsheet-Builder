@@ -1,4 +1,4 @@
-# Eddie Motorsports Shopify Product Loadshet
+# Eddie Motorsports Shopify Product Loadsheet
 
 This repository creates a GUI cleaning up Eddie Motorsports product information from the e-commerce site Shopify. The resulting Loadsheet contains the following information:
 
@@ -17,6 +17,8 @@ This repository creates a GUI cleaning up Eddie Motorsports product information 
 * **Weight (lb)**: weight of product converted from grams to lbs (taken from "Product Grams" field)
 * **Description**: description of product (taken from "Body (HTML)" field)
 * **Image 1**: image url of product (taken from "Image Src" field)
+* **Image 2**: second image url of proudct (taken from "Image Src" field if a second row of the same product exists)
+* **Image 3**: third image url of proudct (taken from "Image Src" field if a third row of the same product exists)
 
 To access the completed exe file, visit the "Release" section.
 
