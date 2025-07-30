@@ -148,7 +148,7 @@ def _process_file_worker(file_path):
         # Step 11: Create final column list
         final_variant_list = df.copy()
         final_column_list = [
-            'Handle', 'Title', 'Variant SKU', 'Full Title', 'Type', 'Variant Price', 'Jobber Price',
+            'Variant SKU', 'Full Title', 'Type', 'Handle', 'Title',  'Variant Price', 'Jobber Price',
             'Dealer Price', 'OEM/WD Price', 'Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)',
             'Weight (lb)', 'Fitment (product.metafields.convermax.fitment)',
             'Body (HTML)', 'Image 1', 'Image 2', 'Image 3', 'Product Link'
