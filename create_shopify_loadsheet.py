@@ -139,11 +139,11 @@ def _process_file_worker(file_path):
         df['Image 2'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 1), axis=1)   # Map Image 2 and 3 using (Handle, Variant SKU)
         df['Image 3'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 2), axis=1)
 
-        df['Product Link'] = df['Handle'].astype(str).apply(lambda h: f'=HYPERLINK("https://eddiemotorsports.com/products/{h}")')
+        df['Product Link'] = 'https://eddiemotorsports.com/products/' + df['Handle'].astype(str)
         df.rename(columns={ 'Variant Image': 'Image 1'}, inplace=True) # rename variant image to image 1
-        df['Image 1'] = df['Image 1'].fillna('#N/A').astype(str).apply(lambda h: f'=HYPERLINK("{h}")' if h != '#N/A' else '#N/A')
-        df['Image 2'] = df['Image 2'].fillna('#N/A').astype(str).apply(lambda h: f'=HYPERLINK("{h}")' if h != '#N/A' else '#N/A')
-        df['Image 3'] = df['Image 3'].fillna('#N/A').astype(str).apply(lambda h: f'=HYPERLINK("{h}")' if h != '#N/A' else '#N/A')
+        df['Image 1'] = df['Image 1'].fillna('#N/A').astype(str)
+        df['Image 2'] = df['Image 2'].fillna('#N/A').astype(str)
+        df['Image 3'] = df['Image 3'].fillna('#N/A').astype(str)
 
         # Step 11: Create final column list
         final_variant_list = df.copy()
@@ -190,11 +190,6 @@ def _process_file_worker(file_path):
             status_label.config(text=f"Error: {e}"),
             messagebox.showerror("Error", f"An error occurred:\n{e}"),
         ])
-
-def hyperlink_image(url):
-    if url and url != '#N/A':
-        return f'=HYPERLINK("{url}", "{url}")'
-    return '#N/A'
 
 def process_file(file_path):
     status_label.config(text="Processing...")
