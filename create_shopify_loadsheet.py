@@ -178,7 +178,7 @@ def save_file():
 
 # --- GUI setup ---
 root = tk.Tk()
-root.title("EMS Loadsheeet Builder")
+root.title("EMS Loadsheet Builder")
 root.geometry("400x170")  # Slightly taller for filename label
 
 # --- Buttons ---
