@@ -29,11 +29,28 @@ def _process_file_worker(file_path):
     global processed_df
 
     try:
+        required_columns = ['Title', 'Variant Price', 'Published', 'Status', 'Handle', 'Variant SKU']
+
+        # Detect encoding
         with open(file_path, 'rb') as f:
             raw_data = f.read()
             encoding = chardet.detect(raw_data)['encoding'] or 'utf-8'
 
-        df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+        # Try to read CSV
+        try:
+            df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+        except pd.errors.ParserError as e:
+            raise ValueError("The selected file could not be parsed as a valid CSV. Please check the format.") from e
+        except Exception as e:
+            raise ValueError("An unexpected error occurred while reading the file.") from e
+
+        # Check for required columns
+        missing = [col for col in required_columns if col not in df.columns]
+        if missing:
+            raise ValueError(f"The following required columns are missing in the CSV file: {', '.join(missing)}")
+
+        # Coerce Variant Price early
+        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
 
         df['Title'] = df['Title'].ffill().infer_objects(copy=False)
         df['Published'] = df['Published'].infer_objects().ffill().infer_objects(copy=False)
@@ -50,6 +67,7 @@ def _process_file_worker(file_path):
         if 'Height (product.metafields.custom.height)' in df.columns and 'Handle' in df.columns:
             df['Height (product.metafields.custom.height)'] = df.groupby('Handle')['Height (product.metafields.custom.height)'].ffill().infer_objects(copy=False)
 
+        # Filter valid entries
         df = df[
             (df['Variant Price'] > 0) &
             (df['Published'].astype(str).str.lower() == 'true') &
@@ -57,7 +75,7 @@ def _process_file_worker(file_path):
         ]
 
         df['Full Title'] = df.apply(build_full_title, axis=1)
-        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce').map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
+        df['Variant Price'] = df['Variant Price'].map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
         df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
 
@@ -127,9 +145,9 @@ def _process_file_worker(file_path):
         import traceback
         traceback.print_exc()
         root.after(0, lambda: [
-            status_label.config(text=f"Error: {e}"),
+            status_label.config(text="An error occurred during processing."),
             process_button.config(state=tk.NORMAL),
-            messagebox.showerror("Error", f"An error occurred:\n{e}")
+            messagebox.showerror("Processing Error", str(e))
         ])
 
 def truncate_text(text, max_len=50):
@@ -140,27 +158,31 @@ def truncate_text(text, max_len=50):
 
 def process_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-    if file_path:
-        file_name = os.path.basename(file_path)
-        display_name = truncate_text(file_name)
+    if not file_path:
+        return
 
-        # Set shortened filename label
+    if not file_path.lower().endswith('.csv'):
+        messagebox.showwarning("Invalid File", "Please select a CSV file.")
+        return
+
+    file_name = os.path.basename(file_path)
+    display_name = truncate_text(file_name)
+
+    file_name_label.config(text=f"Selected File: {display_name}")
+
+    def on_enter(event):
+        file_name_label.config(text=f"Selected File: {file_name}")
+
+    def on_leave(event):
         file_name_label.config(text=f"Selected File: {display_name}")
 
-        # Bind hover events to show full filename on mouseover
-        def on_enter(event):
-            file_name_label.config(text=f"Selected File: {file_name}")
+    file_name_label.bind("<Enter>", on_enter)
+    file_name_label.bind("<Leave>", on_leave)
 
-        def on_leave(event):
-            file_name_label.config(text=f"Selected File: {display_name}")
-
-        file_name_label.bind("<Enter>", on_enter)
-        file_name_label.bind("<Leave>", on_leave)
-
-        status_label.config(text="Processing...")
-        save_button.config(state=tk.DISABLED)
-        process_button.config(state=tk.DISABLED)
-        threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
+    status_label.config(text="Processing...")
+    save_button.config(state=tk.DISABLED)
+    process_button.config(state=tk.DISABLED)
+    threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
 
 def save_file():
     global processed_df
@@ -181,20 +203,16 @@ root = tk.Tk()
 root.title("EMS Loadsheet Builder")
 root.geometry("400x170")  # Slightly taller for filename label
 
-# --- Buttons ---
 process_button = tk.Button(root, text="1. Select & Process CSV File", command=process_file)
 process_button.pack(pady=(20, 5))
 
-# --- Filename label ---
 file_name_label = tk.Label(root, text="", fg="gray", anchor='w', justify='left')
 file_name_label.pack()
 
 save_button = tk.Button(root, text="2. Save Processed File", command=save_file, state=tk.DISABLED)
 save_button.pack(pady=(10, 20))
 
-# --- Status Label ---
 status_label = tk.Label(root, text="", fg="blue")
 status_label.pack(pady=5)
 
-# --- Run GUI ---
 root.mainloop()
