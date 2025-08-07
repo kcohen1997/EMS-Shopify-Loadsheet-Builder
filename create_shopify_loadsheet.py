@@ -1,6 +1,6 @@
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import chardet
 import threading
 import os
@@ -36,7 +36,7 @@ def _process_file_worker(file_path):
             raw_data = f.read()
             encoding = chardet.detect(raw_data)['encoding'] or 'utf-8'
 
-        # Try to read CSV
+        # Read CSV
         try:
             df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
         except pd.errors.ParserError as e:
@@ -49,23 +49,23 @@ def _process_file_worker(file_path):
         if missing:
             raise ValueError(f"The following required columns are missing in the CSV file: {', '.join(missing)}")
 
-        # Coerce Variant Price early
         df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
 
         df['Title'] = df['Title'].ffill().infer_objects(copy=False)
         df['Published'] = df['Published'].infer_objects().ffill().infer_objects(copy=False)
         df['Status'] = df['Status'].ffill().infer_objects(copy=False)
 
-        if 'Fitment (product.metafields.convermax.fitment)' in df.columns and 'Handle' in df.columns:
-            df['Fitment (product.metafields.convermax.fitment)'] = df.groupby('Handle')['Fitment (product.metafields.convermax.fitment)'].ffill().infer_objects(copy=False)
-        if 'Type' in df.columns and 'Handle' in df.columns:
-            df['Type'] = df.groupby('Handle')['Type'].ffill().infer_objects(copy=False)
-        if 'Length (product.metafields.custom.length)' in df.columns and 'Handle' in df.columns:
-            df['Length (product.metafields.custom.length)'] = df.groupby('Handle')['Length (product.metafields.custom.length)'].ffill().infer_objects(copy=False)
-        if 'Width (product.metafields.custom.width)' in df.columns and 'Handle' in df.columns:
-            df['Width (product.metafields.custom.width)'] = df.groupby('Handle')['Width (product.metafields.custom.width)'].ffill().infer_objects(copy=False)
-        if 'Height (product.metafields.custom.height)' in df.columns and 'Handle' in df.columns:
-            df['Height (product.metafields.custom.height)'] = df.groupby('Handle')['Height (product.metafields.custom.height)'].ffill().infer_objects(copy=False)
+        columns_to_ffill = [
+            'Fitment (product.metafields.convermax.fitment)',
+            'Type',
+            'Length (product.metafields.custom.length)',
+            'Width (product.metafields.custom.width)',
+            'Height (product.metafields.custom.height)'
+        ]
+
+        for col in columns_to_ffill:
+            if col in df.columns and 'Handle' in df.columns:
+                df[col] = df.groupby('Handle')[col].ffill().infer_objects(copy=False)
 
         # Filter valid entries
         df = df[
@@ -77,7 +77,10 @@ def _process_file_worker(file_path):
         df['Full Title'] = df.apply(build_full_title, axis=1)
         df['Variant Price'] = df['Variant Price'].map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
-        df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
+        if 'Variant Grams' in df.columns:
+            df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
+        else:
+            df['Weight (lb)'] = "#N/A"
 
         if 'Fitment (product.metafields.convermax.fitment)' in df.columns:
             df['Fitment (product.metafields.convermax.fitment)'] = (
@@ -96,11 +99,14 @@ def _process_file_worker(file_path):
 
         if {'Handle', 'Variant SKU', 'Image Position', 'Image Src'}.issubset(df.columns):
             df['Image Position'] = pd.to_numeric(df['Image Position'], errors='coerce')
-        image_df = df[['Handle', 'Variant SKU', 'Image Position', 'Image Src']].dropna(subset=['Image Src'])
-        image_df = image_df.sort_values(['Handle', 'Variant SKU', 'Image Position'])
-        image_groups = image_df.groupby(['Handle', 'Variant SKU'])['Image Src'].apply(list).to_dict()
-        df['Image 2'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 1), axis=1)
-        df['Image 3'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 2), axis=1)
+            image_df = df[['Handle', 'Variant SKU', 'Image Position', 'Image Src']].dropna(subset=['Image Src'])
+            image_df = image_df.sort_values(['Handle', 'Variant SKU', 'Image Position'])
+            image_groups = image_df.groupby(['Handle', 'Variant SKU'])['Image Src'].apply(list).to_dict()
+            df['Image 2'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 1), axis=1)
+            df['Image 3'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 2), axis=1)
+        else:
+            df['Image 2'] = '#N/A'
+            df['Image 3'] = '#N/A'
 
         df.rename(columns={'Variant Image': 'Image 1'}, inplace=True)
         df['Image 1'] = df['Image 1'].fillna('#N/A').astype(str)
@@ -130,31 +136,33 @@ def _process_file_worker(file_path):
             'Fitment (product.metafields.convermax.fitment)': 'Fitment',
             'Body (HTML)': 'Description'
         }, inplace=True)
-        final_variant_list.fillna("#N/A", inplace=True)
 
+        final_variant_list.fillna("#N/A", inplace=True)
         processed_df = final_variant_list
 
+        # UI updates (main thread only)
         root.after(0, lambda: [
+            progress.stop(),
+            progress.pack_forget(),
             status_label.config(text="Processing complete."),
             save_button.config(state=tk.NORMAL),
             process_button.config(state=tk.NORMAL),
-            messagebox.showinfo("Success", "File processed. You can now save the output.")
+            root.after(100, lambda: messagebox.showinfo("Success", "File processed. You can now save the output."))
         ])
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         root.after(0, lambda: [
+            progress.stop(),
+            progress.pack_forget(),
             status_label.config(text="An error occurred during processing."),
             process_button.config(state=tk.NORMAL),
             messagebox.showerror("Processing Error", str(e))
         ])
 
 def truncate_text(text, max_len=50):
-    if len(text) <= max_len:
-        return text
-    else:
-        return f"...{text[-(max_len - 3):]}"
+    return text if len(text) <= max_len else f"...{text[-(max_len - 3):]}"
 
 def process_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -167,7 +175,6 @@ def process_file():
 
     file_name = os.path.basename(file_path)
     display_name = truncate_text(file_name)
-
     file_name_label.config(text=f"Selected File: {display_name}")
 
     def on_enter(event):
@@ -182,6 +189,10 @@ def process_file():
     status_label.config(text="Processing...")
     save_button.config(state=tk.DISABLED)
     process_button.config(state=tk.DISABLED)
+    progress.pack(pady=5)
+    progress.start()
+
+    # Start background processing
     threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
 
 def save_file():
@@ -201,7 +212,7 @@ def save_file():
 # --- GUI setup ---
 root = tk.Tk()
 root.title("EMS Loadsheet Builder")
-root.geometry("400x170")  # Slightly taller for filename label
+root.geometry("420x200")
 
 process_button = tk.Button(root, text="1. Select & Process CSV File", command=process_file)
 process_button.pack(pady=(20, 5))
@@ -210,8 +221,9 @@ file_name_label = tk.Label(root, text="", fg="gray", anchor='w', justify='left')
 file_name_label.pack()
 
 save_button = tk.Button(root, text="2. Save Processed File", command=save_file, state=tk.DISABLED)
-save_button.pack(pady=(10, 20))
+save_button.pack(pady=(10, 5))
 
+progress = ttk.Progressbar(root, mode='indeterminate')
 status_label = tk.Label(root, text="", fg="blue")
 status_label.pack(pady=5)
 
