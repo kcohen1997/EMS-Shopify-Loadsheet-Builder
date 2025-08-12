@@ -5,120 +5,129 @@ import chardet
 import threading
 import os
 
-# --- Global variable to hold processed DataFrame ---
 processed_df = None
+category_mapping = {}
+product_file_path = None
 
-def build_full_title(row):
-    base_title = str(row.get('Title', '')).strip()
-    options = []
-    for opt_key in ['Option1 Value', 'Option2 Value', 'Option3 Value']:
-        val = row.get(opt_key)
-        if pd.notna(val):
-            val_str = str(val).strip()
-            if val_str and val_str.lower() != 'default title':
-                options.append(val_str)
-    return f"{base_title} - {' - '.join(options)}" if options else base_title
+def shorten_filename(path, max_length=50):
+    filename = os.path.basename(path)
+    return filename if len(filename) <= max_length else "..." + filename[-(max_length - 3):]
 
-def get_image(images, idx):
-    try:
-        return images[idx]
-    except (IndexError, TypeError):
-        return '#N/A'
+def update_buttons_state():
+    """Enable or disable step 3 and 4 buttons based on file load state."""
+    if product_file_path and category_mapping:
+        process_button.config(state=tk.NORMAL)
+        # Save button stays disabled until processing is done
+    else:
+        process_button.config(state=tk.DISABLED)
+        save_button.config(state=tk.DISABLED)
+
+def load_category_file():
+    global category_mapping
+
+    file_path = filedialog.askopenfilename(title="Select Category CSV", filetypes=[("CSV files", "*.csv")])
+    if not file_path:
+        status_label.config(text="Category file load cancelled.")
+        return
+
+    progress_bar.pack(fill='x', padx=20, pady=5)
+    progress_bar.start()
+    status_label.config(text="Loading category file...")
+
+    def worker():
+        global category_mapping
+        category_mapping = {}
+
+        try:
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+                encoding = chardet.detect(raw_data)['encoding']
+
+            cat_df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+
+            if 'categoryid' not in cat_df.columns or 'categoryname' not in cat_df.columns:
+                root.after(0, lambda: messagebox.showerror(
+                    "Category File Error", "Category file must contain 'categoryid' and 'categoryname' columns."))
+                root.after(0, lambda: status_label.config(text="Invalid category file."))
+                return
+
+            category_mapping = dict(zip(cat_df['categoryid'].astype(str), cat_df['categoryname'].astype(str)))
+            root.after(0, lambda: category_filename_label.config(text=f"Category File: {shorten_filename(file_path)}"))
+            root.after(0, lambda: status_label.config(text="Category file loaded successfully."))
+
+            root.after(0, update_buttons_state)
+
+        except FileNotFoundError:
+            root.after(0, lambda: [
+                messagebox.showerror("Category File Error", "Category file not found."),
+                status_label.config(text="Category file not found.")
+            ])
+        except pd.errors.EmptyDataError:
+            root.after(0, lambda: [
+                messagebox.showerror("Category File Error", "Category file is empty."),
+                status_label.config(text="Category file is empty.")
+            ])
+        except Exception as e:
+            root.after(0, lambda: [
+                messagebox.showerror("Category File Error", f"Failed to load category file:\n{e}"),
+                status_label.config(text="Error loading category file.")
+            ])
+        finally:
+            root.after(0, lambda: [
+                progress_bar.stop(),
+                progress_bar.pack_forget()
+            ])
+
+    threading.Thread(target=worker, daemon=True).start()
+
+def resolve_category_names(ids_str):
+    if not isinstance(ids_str, str):
+        return ""
+    ids = ids_str.split(',')
+    names = [
+        category_mapping.get(id_.strip(), f"[{id_.strip()}]") 
+        for id_ in ids if id_.strip()
+    ]
+    filtered_names = [
+        name for name in names
+        if name.lower() != "shop" and not (name.startswith('[') and name.endswith(']'))
+    ]
+    return ", ".join(filtered_names)
 
 def _process_file_worker(file_path):
     global processed_df
-
     try:
-        required_columns = ['Title', 'Variant Price', 'Published', 'Status', 'Handle', 'Variant SKU']
-
-        # Detect encoding
         with open(file_path, 'rb') as f:
             raw_data = f.read()
-            encoding = chardet.detect(raw_data)['encoding'] or 'utf-8'
+            encoding = chardet.detect(raw_data)['encoding']
 
-        # Read CSV
-        try:
-            df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
-        except pd.errors.ParserError as e:
-            raise ValueError("The selected file could not be parsed as a valid CSV. Please check the format.") from e
-        except Exception as e:
-            raise ValueError("An unexpected error occurred while reading the file.") from e
+        df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
 
-        # Check for required columns
-        missing = [col for col in required_columns if col not in df.columns]
-        if missing:
-            raise ValueError(f"The following required columns are missing in the CSV file: {', '.join(missing)}")
+        required_cols = ['productcode', 'productname', 'ischildofproductcode']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column '{col}' in product file.")
 
-        df['Variant Price'] = pd.to_numeric(df['Variant Price'], errors='coerce')
+        productcode_to_title = df.set_index('productcode')['productname'].to_dict()
+        df['Parent Title'] = df['ischildofproductcode'].map(productcode_to_title)
 
-        df['Title'] = df['Title'].ffill().infer_objects(copy=False)
-        df['Published'] = df['Published'].infer_objects().ffill().infer_objects(copy=False)
-        df['Status'] = df['Status'].ffill().infer_objects(copy=False)
+        child_product_codes = df['ischildofproductcode'].dropna().unique()
+        df = df[~df['productcode'].isin(child_product_codes)]
 
-        columns_to_ffill = [
-            'Fitment (product.metafields.convermax.fitment)',
-            'Type',
-            'Length (product.metafields.custom.length)',
-            'Width (product.metafields.custom.width)',
-            'Height (product.metafields.custom.height)'
-        ]
+        if 'productprice' in df.columns:
+            df['productprice'] = pd.to_numeric(df['productprice'], errors='coerce') \
+                .map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
 
-        for col in columns_to_ffill:
-            if col in df.columns and 'Handle' in df.columns:
-                df[col] = df.groupby('Handle')[col].ffill().infer_objects(copy=False)
-
-        # Filter valid entries
-        df = df[
-            (df['Variant Price'] > 0) &
-            (df['Published'].astype(str).str.lower() == 'true') &
-            (df['Status'].astype(str).str.lower() == 'active')
-        ]
-
-        df['Full Title'] = df.apply(build_full_title, axis=1)
-        df['Variant Price'] = df['Variant Price'].map(lambda x: f"${x:,.2f}" if pd.notnull(x) else "")
-
-        if 'Variant Grams' in df.columns:
-            df['Weight (lb)'] = round(df['Variant Grams'] * 0.00220462, 2)
+        if 'categoryids' in df.columns and category_mapping:
+            df['Category Names'] = df['categoryids'].map(resolve_category_names)
         else:
-            df['Weight (lb)'] = "#N/A"
-
-        if 'Fitment (product.metafields.convermax.fitment)' in df.columns:
-            df['Fitment (product.metafields.convermax.fitment)'] = (
-                df['Fitment (product.metafields.convermax.fitment)']
-                .fillna('#N/A')
-                .astype(str)
-                .str.replace('|', ' ', regex=False)
-                .str.replace('\n', ', ', regex=False)
-            )
-
-        for dim_col in ['Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)']:
-            if dim_col in df.columns:
-                df[dim_col] = df[dim_col].fillna('#N/A').astype(str).str.replace("'", '', regex=False)
-
-        df['Product Link'] = 'https://eddiemotorsports.com/products/' + df['Handle'].astype(str)
-
-        if {'Handle', 'Variant SKU', 'Image Position', 'Image Src'}.issubset(df.columns):
-            df['Image Position'] = pd.to_numeric(df['Image Position'], errors='coerce')
-            image_df = df[['Handle', 'Variant SKU', 'Image Position', 'Image Src']].dropna(subset=['Image Src'])
-            image_df = image_df.sort_values(['Handle', 'Variant SKU', 'Image Position'])
-            image_groups = image_df.groupby(['Handle', 'Variant SKU'])['Image Src'].apply(list).to_dict()
-            df['Image 2'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 1), axis=1)
-            df['Image 3'] = df.apply(lambda row: get_image(image_groups.get((row['Handle'], row['Variant SKU'])), 2), axis=1)
-        else:
-            df['Image 2'] = '#N/A'
-            df['Image 3'] = '#N/A'
-
-        df.rename(columns={'Variant Image': 'Image 1'}, inplace=True)
-        df['Image 1'] = df['Image 1'].fillna('#N/A').astype(str)
-        df['Image 2'] = df['Image 2'].fillna('#N/A').astype(str)
-        df['Image 3'] = df['Image 3'].fillna('#N/A').astype(str)
+            df['Category Names'] = "#N/A"
 
         final_variant_list = df.copy()
         final_column_list = [
-            'Variant SKU', 'Full Title', 'Type', 'Handle', 'Title', 'Variant Price',
-            'Length (product.metafields.custom.length)', 'Width (product.metafields.custom.width)', 'Height (product.metafields.custom.height)',
-            'Weight (lb)', 'Fitment (product.metafields.convermax.fitment)', 'Body (HTML)',
-            'Image 1', 'Image 2', 'Image 3', 'Product Link'
+            'productcode', 'productname', 'ischildofproductcode', 'Parent Title', 'productprice',
+            'length', 'width', 'height', 'productweight',
+            'productdescriptionshort', 'photourl', 'producturl', 'Category Names'
         ]
 
         for col in final_column_list:
@@ -126,104 +135,190 @@ def _process_file_worker(file_path):
                 final_variant_list[col] = '#N/A'
 
         final_variant_list = final_variant_list[final_column_list]
+
         final_variant_list.rename(columns={
-            'Variant SKU': 'Part #',
-            'Type': 'Category',
-            'Variant Price': 'Retail Price',
-            'Length (product.metafields.custom.length)': 'Length (in)',
-            'Width (product.metafields.custom.width)': 'Width (in)',
-            'Height (product.metafields.custom.height)': 'Height (in)',
-            'Fitment (product.metafields.convermax.fitment)': 'Fitment',
-            'Body (HTML)': 'Description'
+            'productcode': 'Part #',
+            'productname': 'Full Title',
+            'ischildofproductcode': 'Parent #',
+            'productprice': 'Retail Price',
+            'length': 'Length (in)',
+            'width': 'Width (in)',
+            'height': 'Height (in)',
+            'productweight': 'Weight (in)',
+            'productdescriptionshort': 'Description',
+            'photourl': 'Image Link',
+            'producturl': 'Product Link',
+            'Category Names': 'Categories'
         }, inplace=True)
 
         final_variant_list.fillna("#N/A", inplace=True)
         processed_df = final_variant_list
 
-        # UI updates (main thread only)
         root.after(0, lambda: [
-            progress.stop(),
-            progress.pack_forget(),
-            status_label.config(text="Processing complete."),
+            status_label.config(text="Processing complete. You may now save the file."),
             save_button.config(state=tk.NORMAL),
-            process_button.config(state=tk.NORMAL),
-            root.after(100, lambda: messagebox.showinfo("Success", "File processed. You can now save the output."))
+            progress_bar.stop(),
+            progress_bar.pack_forget()
+        ])
+
+    except FileNotFoundError:
+        root.after(0, lambda: [
+            status_label.config(text="Error: Product file not found."),
+            messagebox.showerror("File Not Found", "The product file could not be found."),
+            save_button.config(state=tk.DISABLED),
+            progress_bar.stop(),
+            progress_bar.pack_forget()
+        ])
+
+    except pd.errors.EmptyDataError:
+        root.after(0, lambda: [
+            status_label.config(text="Error: Product file is empty."),
+            messagebox.showerror("Empty File", "The product CSV file is empty."),
+            save_button.config(state=tk.DISABLED),
+            progress_bar.stop(),
+            progress_bar.pack_forget()
+        ])
+
+    except ValueError as ve:
+        root.after(0, lambda: [
+            status_label.config(text=f"Error: {ve}"),
+            messagebox.showerror("Invalid Data", str(ve)),
+            save_button.config(state=tk.DISABLED),
+            progress_bar.stop(),
+            progress_bar.pack_forget()
         ])
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         root.after(0, lambda: [
-            progress.stop(),
-            progress.pack_forget(),
-            status_label.config(text="An error occurred during processing."),
-            process_button.config(state=tk.NORMAL),
-            messagebox.showerror("Processing Error", str(e))
+            status_label.config(text=f"Unexpected error: {e}"),
+            messagebox.showerror("Error", f"An unexpected error occurred:\n{e}"),
+            save_button.config(state=tk.DISABLED),
+            progress_bar.stop(),
+            progress_bar.pack_forget()
         ])
 
-def truncate_text(text, max_len=50):
-    return text if len(text) <= max_len else f"...{text[-(max_len - 3):]}"
-
-def process_file():
-    file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+def select_product_file():
+    global product_file_path
+    file_path = filedialog.askopenfilename(title="Select Product CSV", filetypes=[("CSV files", "*.csv")])
     if not file_path:
         return
 
-    if not file_path.lower().endswith('.csv'):
-        messagebox.showwarning("Invalid File", "Please select a CSV file.")
+    category_button.config(state=tk.DISABLED)
+    process_button.config(state=tk.DISABLED)
+    save_button.config(state=tk.DISABLED)
+
+    progress_bar.pack(fill='x', padx=20, pady=5)
+    progress_bar.start()
+    status_label.config(text="Loading product file...")
+
+    def worker():
+        global product_file_path
+        try:
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+                encoding = chardet.detect(raw_data)['encoding']
+            df = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+
+            required_cols = ['productcode', 'productname', 'ischildofproductcode']
+            for col in required_cols:
+                if col not in df.columns:
+                    root.after(0, lambda: messagebox.showerror(
+                        "Invalid Product File", f"Product file must contain '{col}' column."))
+                    root.after(0, lambda: status_label.config(text="Invalid product file."))
+                    return
+
+            product_file_path = file_path
+            root.after(0, lambda: product_filename_label.config(text=f"Product File: {shorten_filename(file_path)}"))
+            root.after(0, lambda: status_label.config(text="Product file loaded. Now select category file."))
+            root.after(0, lambda: category_button.config(state=tk.NORMAL))  # Enable category select button
+
+            root.after(0, update_buttons_state)  # Update process/save buttons if conditions met
+
+        except FileNotFoundError:
+            root.after(0, lambda: [
+                messagebox.showerror("Product File Error", "Product file not found."),
+                status_label.config(text="Product file not found.")
+            ])
+        except pd.errors.EmptyDataError:
+            root.after(0, lambda: [
+                messagebox.showerror("Product File Error", "Product file is empty."),
+                status_label.config(text="Product file is empty.")
+            ])
+        except Exception as e:
+            root.after(0, lambda: [
+                messagebox.showerror("Product File Error", f"Failed to load product file:\n{e}"),
+                status_label.config(text="Error loading product file.")
+            ])
+        finally:
+            root.after(0, lambda: [
+                progress_bar.stop(),
+                progress_bar.pack_forget()
+            ])
+
+    threading.Thread(target=worker, daemon=True).start()
+
+def process_files():
+    if not product_file_path:
+        messagebox.showwarning("No Product File", "Please select the product CSV file first.")
         return
-
-    file_name = os.path.basename(file_path)
-    display_name = truncate_text(file_name)
-    file_name_label.config(text=f"Selected File: {display_name}")
-
-    def on_enter(event):
-        file_name_label.config(text=f"Selected File: {file_name}")
-
-    def on_leave(event):
-        file_name_label.config(text=f"Selected File: {display_name}")
-
-    file_name_label.bind("<Enter>", on_enter)
-    file_name_label.bind("<Leave>", on_leave)
+    if not category_mapping:
+        messagebox.showwarning("No Category File", "Please select the category CSV file first.")
+        return
 
     status_label.config(text="Processing...")
     save_button.config(state=tk.DISABLED)
-    process_button.config(state=tk.DISABLED)
-    progress.pack(pady=5)
-    progress.start()
+    progress_bar.pack(fill='x', padx=20, pady=5)
+    progress_bar.start()
 
-    # Start background processing
-    threading.Thread(target=_process_file_worker, args=(file_path,), daemon=True).start()
+    threading.Thread(target=_process_file_worker, args=(product_file_path,), daemon=True).start()
 
 def save_file():
     global processed_df
-    if processed_df is None:
-        messagebox.showwarning("No Data", "You must process a file before saving.")
-        return
-
-    output_file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
-    if output_file_path:
-        processed_df.to_csv(output_file_path, index=False)
-        status_label.config(text="File saved successfully.")
-        messagebox.showinfo("Saved", f"File saved to:\n{output_file_path}")
+    if processed_df is not None:
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            initialfile="processed_loadsheet.csv",
+            filetypes=[("CSV files", "*.csv")]
+        )
+        if output_path:
+            try:
+                processed_df.to_csv(output_path, index=False)
+                status_label.config(text="File saved successfully.")
+                messagebox.showinfo("Success", f"File saved to:\n{output_path}")
+            except PermissionError:
+                messagebox.showerror("Permission Error", "The file is open in another program (e.g., Excel). Please close it and try again.")
+                status_label.config(text="Error saving file.")
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Failed to save file:\n{e}")
+                status_label.config(text="Error saving file.")
+        else:
+            status_label.config(text="Save cancelled.")
     else:
-        status_label.config(text="Save cancelled.")
+        messagebox.showwarning("No Data", "No processed data to save.")
 
-# --- GUI setup ---
+# --- GUI Setup ---
 root = tk.Tk()
-root.title("EMS Loadsheet Builder")
-root.geometry("420x200")
+root.title("EMI Loadsheet Builder")
+root.geometry("450x320")
 
-process_button = tk.Button(root, text="1. Select & Process CSV File", command=process_file)
-process_button.pack(pady=(20, 5))
+product_button = tk.Button(root, text="1. Select Product CSV File", command=select_product_file)
+product_button.pack(padx=20, pady=(20, 5))
+product_filename_label = tk.Label(root, text="", fg="gray")
+product_filename_label.pack(pady=(0, 10))
 
-file_name_label = tk.Label(root, text="", fg="gray", anchor='w', justify='left')
-file_name_label.pack()
+category_button = tk.Button(root, text="2. Select Category CSV File", command=load_category_file, state=tk.DISABLED)
+category_button.pack(padx=20, pady=(5, 10))
+category_filename_label = tk.Label(root, text="", fg="gray")
+category_filename_label.pack(pady=(0, 10))
 
-save_button = tk.Button(root, text="2. Save Processed File", command=save_file, state=tk.DISABLED)
-save_button.pack(pady=(10, 5))
+process_button = tk.Button(root, text="3. Process Files", command=process_files, state=tk.DISABLED)
+process_button.pack(padx=20, pady=(0, 10))
 
-progress = ttk.Progressbar(root, mode='indeterminate')
+save_button = tk.Button(root, text="4. Save Processed File", command=save_file, state=tk.DISABLED)
+save_button.pack(padx=20, pady=(0, 15))
+
+progress_bar = ttk.Progressbar(root, mode='indeterminate')
+
 status_label = tk.Label(root, text="", fg="blue")
 status_label.pack(pady=5)
 
