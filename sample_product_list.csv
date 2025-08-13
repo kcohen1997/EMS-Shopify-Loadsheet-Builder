@@ -1,0 +1,5 @@
+Title,Option1 Value,Option2 Value,Option3 Value,Variant Price,Published,Status,Handle,Variant SKU,Variant Grams,Fitment (product.metafields.convermax.fitment),Type,Length (product.metafields.custom.length),Width (product.metafields.custom.width),Height (product.metafields.custom.height),Body (HTML),Variant Image
+Engine Cover,Red,Large,,149.99,True,active,engine-cover-red-large,EC-R-L,1200,"Ford Mustang|2018
+Chevrolet Camaro|2019",Engine Parts,15',10',3',<p>High quality engine cover.</p>,https://example.com/image1.jpg
+Steering Wheel,Black,,,199.5,True,active,steering-wheel-black,SW-B,900,Tesla Model 3|2020,Interior Parts,14',14',4',<p>Premium leather steering wheel.</p>,https://example.com/image2.jpg
+Brake Pads,,,,89.0,True,active,brake-pads,BP-STD,1500,,Braking System,8',6',3',<p>Standard brake pads set.</p>,
