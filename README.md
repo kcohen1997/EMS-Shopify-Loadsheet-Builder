@@ -2,23 +2,20 @@
 
 This repository creates a GUI cleaning up Eddie Motorsports product information from the e-commerce site Shopify. The resulting Loadsheet contains the following information:
 
-* **Handle**: a user and URL-friendly version of a product (taken from the "Handle" field)
-* **Title**: title of product (taken from "Title" field)
-* **Part #**: identification (id) for product/variant (taken from "Variant SKU" field)
-* **Full Title**: title of product, including the specific variant if there is one (taken from "Title", "Option1 Value", "Option2 Value" and "Option3 Value" field)
-* **Category**: category of product (taken from "Product Category" field)
-* **Retail Price**: retail price of product/variant (taken from "Variant Price" field)
-* **Jobber Price**: jobber price of product/variant, (calculated from "Variant Price" field, default is 0.85 times the Retail Price)
-* **Dealer Price**: dealer price of product/variant, (calculated from "Variant Price" field, default is 0.75 times the Retail Price)
-* **OEM/WD Price**: oem/wd price of product/variant, (calculated from "Variant Price" field, default is 0.675 times the Retail Price)
-* **Length (in)**: length of product (taken from "length" metafield)
-* **Width (in)**: width of product (taken from "width" metafield)
-* **Height (in)**: height of product (taken from "height" metafield)
-* **Weight (lb)**: weight of product converted from grams to lbs (taken from "Product Grams" field)
-* **Description**: description of product (taken from "Body (HTML)" field)
-* **Image 1**: image url of product (taken from "Image Src" field)
-* **Image 2**: second image url of proudct (taken from "Image Src" field if a second row of the same product exists)
-* **Image 3**: third image url of proudct (taken from "Image Src" field if a third row of the same product exists)
+* **Part #:**: taken from "Variant SKU" field
+* **Full Title:**: taken from "Title", "Option1 Value", "Option2 Value" and "Option3 Value" fields
+* **Category:**: taken from "Type" field
+* **Handle:**: taken from "Handle" field
+* **Title:**: title of parent product based on "Handle" field
+* **Retail Price:**: taken from "Variant Price" field
+* **Length (in):**: length of product (taken from custom "Length" metafield)
+* **Width (in):**: width of product (taken from custom "Width" metafield)
+* **Height (in):**: height of product (taken from custom "Height" metafield)
+* **Weight (lb):**: weight of product (taken from custom "Weight" metafield)
+* **Fitment:**: fitment of product (taken from custom "Fitment" metafield)
+* **Description:**: taken from "HTML (Body)" metafield
+* **Image Link:**: taken from "Variant Image" field
+* **Product Link:**: combines Eddie Motorsports Website link with handle
 
 To access the completed exe file, visit the "Release" section.
 
