@@ -4,6 +4,8 @@ from tkinter import filedialog, messagebox, ttk
 import chardet
 import threading
 import os
+import re
+from html import unescape
 
 # --- Global variable to hold processed DataFrame ---
 processed_df = None
@@ -18,6 +20,17 @@ def build_full_title(row):
             if val_str and val_str.lower() != 'default title':
                 options.append(val_str)
     return f"{base_title} - {' - '.join(options)}" if options else base_title
+
+# --- Clean Description (strip HTML + special characters) ---
+def clean_description(text):
+    if pd.isna(text):
+        return "#N/A"
+    text = str(text)
+    text = unescape(text)                              # convert HTML entities (&amp; -> &)
+    text = re.sub(r"<[^>]*>", " ", text)               # remove HTML tags
+    text = re.sub(r"[^a-zA-Z0-9\s.,;:!?()\-]", "", text)  # remove unwanted symbols
+    text = re.sub(r"\s+", " ", text).strip()           # normalize whitespace
+    return text if text else "#N/A"
 
 def _process_file_worker(file_path):
     global processed_df
@@ -118,6 +131,10 @@ def _process_file_worker(file_path):
             'Fitment (product.metafields.convermax.fitment)': 'Fitment',
             'Body (HTML)': 'Description'
         }, inplace=True)
+
+        # Clean Description text
+        if 'Description' in final_variant_list.columns:
+            final_variant_list['Description'] = final_variant_list['Description'].apply(clean_description)
 
         final_variant_list.fillna("#N/A", inplace=True)
         processed_df = final_variant_list
