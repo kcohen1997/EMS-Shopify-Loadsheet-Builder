@@ -26,15 +26,10 @@ def clean_description(text):
     if pd.isna(text):
         return "#N/A"
     text = str(text)
-    text = unescape(text)  # convert HTML entities (&amp; -> &)
-    text = re.sub(r"<[^>]*>", " ", text)  # remove HTML tags
-
-    # allow letters, numbers, spaces, common punctuation & symbols
-    text = re.sub(r"[^a-zA-Z0-9\s.,;:!?(){}\[\]\-_'\"&/%+°•$@]", "", text)
-
-    # normalize whitespace
-    text = re.sub(r"\s+", " ", text).strip()
-
+    text = unescape(text)                              # convert HTML entities (&amp; -> &)
+    text = re.sub(r"<[^>]*>", " ", text)               # remove HTML tags
+    text = re.sub(r"[^a-zA-Z0-9\s.,;:!?()\-]", "", text)  # remove unwanted symbols
+    text = re.sub(r"\s+", " ", text).strip()           # normalize whitespace
     return text if text else "#N/A"
 
 def _process_file_worker(file_path):
@@ -72,7 +67,8 @@ def _process_file_worker(file_path):
             'Type',
             'Length (product.metafields.custom.length)',
             'Width (product.metafields.custom.width)',
-            'Height (product.metafields.custom.height)'
+            'Height (product.metafields.custom.height)',
+            'Body (HTML)'
         ]
 
         for col in columns_to_ffill:
